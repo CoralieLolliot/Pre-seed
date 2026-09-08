@@ -33,6 +33,12 @@ export type DocumentRow = {
   sort_order: number;
   access_level: number;
   content: string | null;
+  // Versions anglaises — nulles tant que la traduction n'est pas saisie,
+  // auquel cas l'affichage retombe sur la version française.
+  title_en: string | null;
+  content_en: string | null;
+  docsend_url_en: string | null;
+  category_en: string | null;
 };
 
 export type EventType =

@@ -1,4 +1,5 @@
 import { createClient } from "@/lib/supabase/server";
+import { getDemoSession } from "@/lib/demo";
 
 const EVENT_TYPES = new Set([
   "login",
@@ -9,6 +10,10 @@ const EVENT_TYPES = new Set([
 ]);
 
 export async function POST(request: Request) {
+  // Une démo ne laisse aucune trace, même si l'admin a par ailleurs une
+  // session Supabase : sans ce garde, les events seraient rattachés à lui.
+  if (await getDemoSession()) return new Response(null, { status: 204 });
+
   let body: Record<string, unknown>;
   try {
     body = JSON.parse(await request.text());

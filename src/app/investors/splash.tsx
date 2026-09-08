@@ -1,51 +1,87 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
-// Cinématique d'entrée : l'icône Minah surgit (spring), puis le wordmark se
-// révèle par balayage, halo orange en fond. Une fois par session.
+// Cinématique d'entrée, jouée uniquement au moment où la personne entre
+// vraiment dans l'espace : après validation du code (flag posé par le
+// formulaire) ou arrivée par le lien email (?welcome=1 posé par le callback).
+// Séquence : fondu d'entrée → icône (spring) → wordmark révélé → fondu de sortie.
 export function Splash() {
   const [show, setShow] = useState(false);
-  const [phase, setPhase] = useState<"icon" | "logo" | "out">("icon");
+  const [phase, setPhase] = useState<"fadein" | "icon" | "logo" | "out">(
+    "fadein"
+  );
+  // Le déclencheur est à usage unique : on l'efface dès qu'on l'a lu. Or en
+  // développement React monte l'effet deux fois — sans cette mémoire, le
+  // second passage ne retrouverait rien, n'armerait plus les minuteries, et
+  // le voile resterait affiché pour toujours.
+  const playRef = useRef<boolean | null>(null);
 
   useEffect(() => {
-    if (window.sessionStorage.getItem("minah_splash_seen")) return;
-    window.sessionStorage.setItem("minah_splash_seen", "1");
+    if (playRef.current === null) {
+      const fromCode =
+        window.sessionStorage.getItem("minah_splash_pending") === "1";
+      const params = new URLSearchParams(window.location.search);
+      const fromLink = params.has("welcome");
+      playRef.current = fromCode || fromLink;
+
+      if (playRef.current) {
+        window.sessionStorage.removeItem("minah_splash_pending");
+        if (fromLink) {
+          params.delete("welcome");
+          const qs = params.toString();
+          window.history.replaceState(
+            null,
+            "",
+            window.location.pathname + (qs ? `?${qs}` : "")
+          );
+        }
+      }
+    }
+    if (!playRef.current) return;
+
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- la décision
+    // dépend de sessionStorage et de l'URL, indisponibles au rendu serveur.
     setShow(true);
-    const t1 = setTimeout(() => setPhase("logo"), 850);
-    const t2 = setTimeout(() => setPhase("out"), 2500);
-    const t3 = setTimeout(() => setShow(false), 3300);
-    return () => {
-      clearTimeout(t1);
-      clearTimeout(t2);
-      clearTimeout(t3);
-    };
+    setPhase("fadein");
+    const timers = [
+      setTimeout(() => setPhase("icon"), 60),
+      setTimeout(() => setPhase("logo"), 1050),
+      setTimeout(() => setPhase("out"), 2800),
+      setTimeout(() => setShow(false), 3700),
+    ];
+    return () => timers.forEach(clearTimeout);
   }, []);
 
   if (!show) return null;
 
   return (
     <div
-      className={`fixed inset-0 z-[100] flex items-center justify-center bg-background transition-opacity duration-700 ease-out ${
+      // Filet de sécurité : un clic passe la cinématique. Si une minuterie
+      // saute, l'espace ne reste jamais inaccessible derrière le voile.
+      onClick={() => setShow(false)}
+      className={`fixed inset-0 z-[100] flex items-center justify-center bg-background transition-opacity duration-[900ms] ease-out ${
         phase === "out" ? "pointer-events-none opacity-0" : "opacity-100"
       }`}
       aria-hidden="true"
     >
       {/* halo */}
-      <div className="absolute h-64 w-64 rounded-full bg-brand/15 blur-3xl splash-halo" />
+      <div className="splash-halo absolute h-64 w-64 rounded-full bg-brand/15 blur-3xl" />
 
-      {/* 1. l'icône surgit */}
-      {phase === "icon" && (
+      {/* 1. l'icône surgit en douceur */}
+      {phase !== "logo" && phase !== "out" && (
         // eslint-disable-next-line @next/next/no-img-element
         <img
           src="/brand/icon.png"
           alt=""
-          className="splash-pop h-16 w-16 rounded-full shadow-lg"
+          className={`h-16 w-16 rounded-full shadow-lg ${
+            phase === "icon" ? "splash-pop" : "opacity-0"
+          }`}
         />
       )}
 
       {/* 2. le wordmark se révèle */}
-      {phase !== "icon" && (
+      {(phase === "logo" || phase === "out") && (
         // eslint-disable-next-line @next/next/no-img-element
         <img
           src="/brand/logo.png"

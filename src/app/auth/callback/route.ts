@@ -29,18 +29,21 @@ export async function GET(request: Request) {
   const next = rawNext.startsWith("/") ? rawNext : "/investors/home";
 
   const supabase = await createClient();
+  // ?welcome=1 déclenche la cinématique d'entrée côté client.
+  const dest = new URL(next, origin);
+  dest.searchParams.set("welcome", "1");
 
   if (code) {
     const { error } = await supabase.auth.exchangeCodeForSession(code);
     if (!error) {
       await recordLogin();
-      return NextResponse.redirect(`${origin}${next}`);
+      return NextResponse.redirect(dest);
     }
   } else if (tokenHash && type) {
     const { error } = await supabase.auth.verifyOtp({ token_hash: tokenHash, type });
     if (!error) {
       await recordLogin();
-      return NextResponse.redirect(`${origin}${next}`);
+      return NextResponse.redirect(dest);
     }
   }
 

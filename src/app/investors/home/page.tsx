@@ -2,15 +2,22 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { ensureInvestor } from "@/lib/investors";
-import { deal } from "@/lib/deal";
+import { dealFor } from "@/lib/deal";
+import { getLocale } from "@/lib/i18n-server";
+import { docFields, t } from "@/lib/i18n";
+import { demoInvestor, getDemoSession } from "@/lib/demo";
 import type { DocumentRow, Investor } from "@/lib/types";
 import { DataRoom } from "./data-room";
 import { InterestModal } from "./interest-modal";
 import { MeetingButton } from "./meeting-button";
 
-export const metadata = { title: "Espace investisseurs — Minah" };
+export async function generateMetadata() {
+  return { title: t(await getLocale(), "meta.title") };
+}
 
 export default async function InvestorHomePage() {
+  const locale = await getLocale();
+
   if (!process.env.NEXT_PUBLIC_SUPABASE_URL) {
     return (
       <Main>
@@ -22,24 +29,32 @@ export default async function InvestorHomePage() {
     );
   }
 
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) redirect("/investors");
+  const deal = dealFor(locale);
+  const demo = await getDemoSession();
 
-  const { data } = await supabase
-    .from("investors")
-    .select("*")
-    .eq("id", user.id)
-    .maybeSingle();
-  const investor = (data as Investor | null) ?? (await ensureInvestor(user));
+  let investor: Investor | null;
+  if (demo) {
+    investor = demoInvestor(demo);
+  } else {
+    const supabase = await createClient();
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    if (!user) redirect("/investors");
+
+    const { data } = await supabase
+      .from("investors")
+      .select("*")
+      .eq("id", user.id)
+      .maybeSingle();
+    investor = (data as Investor | null) ?? (await ensureInvestor(user));
+  }
 
   if (!investor) {
     return (
       <Main>
         <p className="text-sm text-neutral-600">
-          Votre profil n&apos;a pas pu être chargé. Contactez{" "}
+          {t(locale, "home.profileError")}{" "}
           <a href="mailto:contact@minah.io" className="underline">
             contact@minah.io
           </a>
@@ -53,11 +68,10 @@ export default async function InvestorHomePage() {
     return (
       <Main>
         <h1 className="text-xl font-semibold tracking-tight">
-          Accès indisponible
+          {t(locale, "home.blocked.title")}
         </h1>
         <p className="mt-2 text-sm text-neutral-600">
-          Votre accès à l&apos;espace investisseurs n&apos;est pas actif. Pour
-          toute question :{" "}
+          {t(locale, "home.blocked.body")}{" "}
           <a href="mailto:contact@minah.io" className="underline">
             contact@minah.io
           </a>
@@ -67,20 +81,39 @@ export default async function InvestorHomePage() {
     );
   }
 
-  const { data: documents } = await supabase
-    .from("documents")
-    .select("*")
-    .order("sort_order");
-  const docs = (documents ?? []) as DocumentRow[];
+  // En démo il n'y a pas de session Supabase : on lit via le service role en
+  // rejouant nous-mêmes le filtrage de niveau que ferait la RLS.
+  let documents: DocumentRow[] | null = null;
+  if (demo) {
+    const { data } = await createAdminClient()
+      .from("documents")
+      .select("*")
+      .lte("access_level", demo.level2 ? 2 : 1)
+      .order("sort_order");
+    documents = data as DocumentRow[] | null;
+  } else {
+    const supabase = await createClient();
+    const { data } = await supabase
+      .from("documents")
+      .select("*")
+      .order("sort_order");
+    documents = data as DocumentRow[] | null;
+  }
+  const docs = documents ?? [];
   const level1 = docs.filter((d) => d.access_level === 1);
   const level2 = docs.filter((d) => d.access_level === 2);
   const level2Unlocked = investor.level2_access;
 
-  let lockedTitles: { title: string; category: string }[] = [];
+  let lockedTitles: {
+    title: string;
+    title_en: string | null;
+    category: string;
+    category_en: string | null;
+  }[] = [];
   if (!level2Unlocked && process.env.SUPABASE_SERVICE_ROLE_KEY) {
     const { data: locked } = await createAdminClient()
       .from("documents")
-      .select("title, category, sort_order")
+      .select("title, title_en, category, category_en, sort_order")
       .eq("access_level", 2)
       .order("sort_order");
     lockedTitles = locked ?? [];
@@ -90,15 +123,14 @@ export default async function InvestorHomePage() {
     return (
       <Main>
         <h1 className="text-xl font-semibold tracking-tight">
-          Accès en cours de validation
+          {t(locale, "home.pending.title")}
         </h1>
         <p className="mt-2 text-sm text-neutral-600">
-          Merci {investor.full_name ?? ""} — votre email est confirmé. Nous
-          validons votre accès et vous préviendrons rapidement.
+          {t(locale, "home.pending.body", { name: investor.full_name ?? "" })}
         </p>
         {level1.length > 0 && (
           <div className="mt-10">
-            <DataRoom docs={level1} />
+            <DataRoom docs={level1} locale={locale} />
           </div>
         )}
       </Main>
@@ -118,14 +150,16 @@ export default async function InvestorHomePage() {
         <div className="absolute inset-0 bg-gradient-to-r from-black/45 via-black/20 to-transparent" />
         <div className="absolute inset-0 mx-auto flex w-full max-w-5xl flex-col justify-center px-6">
           <p className="text-xs font-medium uppercase tracking-widest text-white/80">
-            Espace investisseurs · Confidentiel
+            {t(locale, "home.banner.overline")}
           </p>
           <h1 className="mt-2 text-3xl font-semibold tracking-tight text-white md:text-4xl">
-            Opportunité d&apos;investissement — Pre-seed
+            {t(locale, "home.banner.title")}
           </h1>
           <p className="mt-2 text-sm text-white/90 md:text-base">
-            Tour de {deal.target} · {deal.period} · L&apos;investissement
-            africain, next gen.
+            {t(locale, "home.banner.subtitle", {
+              target: deal.target,
+              period: deal.period,
+            })}
           </p>
         </div>
       </section>
@@ -134,32 +168,32 @@ export default async function InvestorHomePage() {
         {/* Actions + fil d'Ariane des niveaux */}
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <nav
-            aria-label="Niveaux de la data room"
+            aria-label={t(locale, "home.dataroom.level1")}
             className="flex items-center gap-2 text-xs"
           >
             <span className="rounded-full bg-foreground px-3 py-1 font-medium text-background">
-              Niveau 1 — vous êtes ici
+              {t(locale, "home.level1.badge")}
             </span>
             <span className="text-neutral-400">→</span>
             {level2Unlocked ? (
               <span className="rounded-full bg-salvia px-3 py-1 font-medium text-foreground">
-                Niveau 2 — débloqué ✓
+                {t(locale, "home.level2.unlocked")}
               </span>
             ) : investor.interest_expressed_at ? (
               <span className="rounded-full border border-brand/40 bg-brand/10 px-3 py-1 text-foreground">
-                Niveau 2 — ouverture en cours…
+                {t(locale, "home.level2.pending")}
               </span>
             ) : (
               <span className="rounded-full border border-dashed border-neutral-400 px-3 py-1 text-neutral-500">
-                Niveau 2 — verrouillé 🔒
+                {t(locale, "home.level2.locked")}
               </span>
             )}
           </nav>
           <div className="flex items-center gap-3">
             {!level2Unlocked && !investor.interest_expressed_at && (
-              <InterestModal />
+              <InterestModal locale={locale} demo={!!demo} />
             )}
-            <MeetingButton />
+            <MeetingButton locale={locale} />
           </div>
         </div>
 
@@ -167,34 +201,37 @@ export default async function InvestorHomePage() {
         <section className="mt-10 grid gap-8 md:grid-cols-[1fr_200px] md:items-center">
           <div>
             <h2 className="text-2xl font-semibold leading-tight tracking-tight">
-              La plateforme de dette privée pour l&apos;Afrique.
+              {t(locale, "home.pitch.title")}
             </h2>
             <p className="mt-3 text-sm leading-6 text-neutral-600">
-              La première génération de la fintech africaine a gagné les
-              paiements. La prochaine gagnera l&apos;investissement. Minah en
-              construit les rails — dette senior sécurisée, coupons fixes,
-              infrastructure on-chain — et ouvre son pre-seed.
+              {t(locale, "home.pitch.body")}
             </p>
           </div>
           {/* Photo corporate — remplacer par la vraie photo (public/brand/team.jpg) */}
           <div className="flex aspect-[4/3] items-center justify-center rounded-lg bg-gradient-to-br from-salvia/50 to-salvia text-xs text-neutral-500">
-            Photo équipe — à venir
+            {t(locale, "home.photo.placeholder")}
           </div>
         </section>
 
         {/* Conditions du deal */}
         <section className="mt-10 rounded-lg border border-foreground/10 bg-white/50 p-6">
-          <h2 className="text-sm font-semibold">La levée en cours</h2>
+          <h2 className="text-sm font-semibold">{t(locale, "home.deal.title")}</h2>
           <dl className="mt-4 grid grid-cols-2 gap-x-6 gap-y-4 sm:grid-cols-4">
-            <Term label="Objectif" value={deal.target} />
-            <Term label="Ticket minimum" value={deal.minTicket} />
-            <Term label="Lead recherché" value={deal.leadWanted} />
-            <Term label="Matching fund" value={deal.matchingFund} />
+            <Term label={t(locale, "home.deal.target")} value={deal.target} />
+            <Term
+              label={t(locale, "home.deal.minTicket")}
+              value={deal.minTicket}
+            />
+            <Term label={t(locale, "home.deal.lead")} value={deal.leadWanted} />
+            <Term
+              label={t(locale, "home.deal.matching")}
+              value={deal.matchingFund}
+            />
           </dl>
           <div className="mt-6">
             <div className="flex items-baseline justify-between text-xs text-neutral-500">
               <span>{deal.engagedLabel}</span>
-              <span>objectif {deal.target}</span>
+              <span>{t(locale, "home.deal.of", { target: deal.target })}</span>
             </div>
             {/* Tirets fins : montants identifiés en soft commit, pas encore signés */}
             <div className="mt-2 h-1 rounded-full bg-neutral-200/80">
@@ -215,10 +252,10 @@ export default async function InvestorHomePage() {
         {/* Data room niveau 1 — deux colonnes */}
         <section className="mt-10">
           <h2 className="text-sm font-semibold uppercase tracking-widest text-neutral-400">
-            Data room · Niveau 1
+            {t(locale, "home.dataroom.level1")}
           </h2>
           <div className="mt-4">
-            <DataRoom docs={level1} columns={2} />
+            <DataRoom docs={level1} locale={locale} columns={2} />
           </div>
         </section>
 
@@ -227,19 +264,26 @@ export default async function InvestorHomePage() {
           {level2Unlocked ? (
             <>
               <h2 className="text-sm font-semibold uppercase tracking-widest text-neutral-400">
-                Data room · Niveau 2
+                {t(locale, "home.dataroom.level2")}
                 <span className="ml-2 rounded-full bg-salvia px-2 py-0.5 text-xs font-normal normal-case tracking-normal text-foreground">
                   {investor.interest_tranche
-                    ? `débloqué — intérêt : ${investor.interest_tranche}`
-                    : "débloqué par l'équipe"}
+                    ? t(locale, "home.dataroom.unlockedInterest", {
+                        tranche: investor.interest_tranche,
+                      })
+                    : t(locale, "home.dataroom.unlockedTeam")}
                 </span>
               </h2>
               <div className="mt-4">
                 {level2.length > 0 ? (
-                  <DataRoom docs={level2} startIndex={8} columns={2} />
+                  <DataRoom
+                    docs={level2}
+                    locale={locale}
+                    startIndex={8}
+                    columns={2}
+                  />
                 ) : (
                   <p className="text-sm text-neutral-500">
-                    Documents en cours d&apos;ajout.
+                    {t(locale, "home.dataroom.adding")}
                   </p>
                 )}
               </div>
@@ -247,40 +291,41 @@ export default async function InvestorHomePage() {
           ) : (
             <>
               <h2 className="text-sm font-semibold uppercase tracking-widest text-neutral-400">
-                Data room · Niveau 2 🔒
+                {t(locale, "home.dataroom.level2.locked")}
               </h2>
               <p className="mt-2 text-sm leading-6 text-neutral-600">
-                Gestion des risques, table de capitalisation, contrats cadres :
-                ce niveau se débloque en manifestant un intérêt pour une tranche
-                — indicatif et non engageant.
+                {t(locale, "home.dataroom.lockedIntro")}
               </p>
               {lockedTitles.length > 0 && (
                 <ul className="mt-4 grid gap-x-6 md:grid-cols-2">
-                  {lockedTitles.map((doc) => (
-                    <li
-                      key={doc.title}
-                      className="flex items-center justify-between border-b border-dashed border-neutral-300 px-1 py-2.5 text-sm text-neutral-400"
-                    >
-                      <span>
-                        <span className="mr-2 text-xs uppercase tracking-wide text-neutral-300">
-                          {doc.category}
+                  {lockedTitles.map((doc) => {
+                    const { title, category } = docFields(doc, locale);
+                    return (
+                      <li
+                        key={doc.title}
+                        className="flex items-center justify-between border-b border-dashed border-neutral-300 px-1 py-2.5 text-sm text-neutral-400"
+                      >
+                        <span>
+                          <span className="mr-2 text-xs uppercase tracking-wide text-neutral-300">
+                            {category}
+                          </span>
+                          {title}
                         </span>
-                        {doc.title}
-                      </span>
-                      <span>🔒</span>
-                    </li>
-                  ))}
+                        <span>🔒</span>
+                      </li>
+                    );
+                  })}
                 </ul>
               )}
               <div className="mt-5">
                 {investor.interest_expressed_at ? (
                   <p className="text-sm text-neutral-600">
-                    Intérêt enregistré ({investor.interest_tranche}) ✓ —
-                    l&apos;équipe est prévenue et vous ouvre le niveau 2 très
-                    rapidement.
+                    {t(locale, "home.dataroom.interestRecorded", {
+                      tranche: investor.interest_tranche ?? "",
+                    })}
                   </p>
                 ) : (
-                  <InterestModal />
+                  <InterestModal locale={locale} demo={!!demo} />
                 )}
               </div>
             </>
@@ -290,18 +335,13 @@ export default async function InvestorHomePage() {
         {/* Clôture : contexte + invitation au rendez-vous */}
         <section className="mt-12 rounded-lg border border-marsala/20 bg-white/60 p-8 text-center">
           <h2 className="text-base font-semibold tracking-tight">
-            Parlons-en de vive voix
+            {t(locale, "home.closing.title")}
           </h2>
           <p className="mx-auto mt-3 max-w-xl text-sm leading-6 text-neutral-600">
-            Ces documents méritent mieux qu&apos;une lecture seule :
-            l&apos;équipe vous les présente volontiers en amont pour donner le
-            contexte de chacun. Et une fois votre deep dive terminé,
-            n&apos;hésitez pas à prendre rendez-vous — que vous envisagiez
-            d&apos;investir ou non, vos retours et vos insights nous sont
-            précieux pour nous améliorer.
+            {t(locale, "home.closing.body")}
           </p>
           <div className="mt-5 flex justify-center">
-            <MeetingButton />
+            <MeetingButton locale={locale} />
           </div>
         </section>
       </Main>

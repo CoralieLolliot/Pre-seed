@@ -3,13 +3,20 @@
 import { useState } from "react";
 import { deal } from "@/lib/deal";
 import { track } from "@/lib/tracking";
+import { t, type Locale } from "@/lib/i18n";
 
 const MAX_QUESTIONS = 8;
 
 // Pastille Minah en bas à droite : au survol « Posez-nous vos questions »,
 // au clic un pop-up permet d'envoyer plusieurs questions distinctes (bouton +),
 // chacune avec son contexte, en amont du RDV.
-export function QuestionWidget() {
+export function QuestionWidget({
+  locale,
+  demo = false,
+}: {
+  locale: Locale;
+  demo?: boolean;
+}) {
   const [open, setOpen] = useState(false);
   const [questions, setQuestions] = useState<string[]>([""]);
   const [status, setStatus] = useState<"idle" | "sending" | "sent" | "error">(
@@ -20,6 +27,11 @@ export function QuestionWidget() {
 
   async function submit() {
     setStatus("sending");
+    // En démo on montre l'écran de confirmation sans rien envoyer à l'équipe.
+    if (demo) {
+      setStatus("sent");
+      return;
+    }
     const res = await fetch("/api/questions", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -49,11 +61,11 @@ export function QuestionWidget() {
     <>
       <div className="group fixed right-5 bottom-5 z-40 flex items-center gap-2">
         <span className="pointer-events-none translate-x-1 rounded-md bg-foreground px-2.5 py-1 text-xs text-background opacity-0 shadow transition-all group-hover:translate-x-0 group-hover:opacity-100">
-          Posez-nous vos questions
+          {t(locale, "widget.hover")}
         </span>
         <button
           onClick={() => setOpen(true)}
-          aria-label="Posez-nous vos questions"
+          aria-label={t(locale, "widget.hover")}
           className="rounded-full shadow-md transition-transform hover:scale-105"
         >
           {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -73,12 +85,10 @@ export function QuestionWidget() {
             {status === "sent" ? (
               <>
                 <h3 className="text-base font-semibold">
-                  Merci pour vos questions ✓
+                  {t(locale, "widget.thanks.title")}
                 </h3>
                 <p className="mt-2 text-sm leading-6 text-neutral-600">
-                  Le plus simple pour y répondre : prenez un rendez-vous avec
-                  l&apos;équipe. Sinon, nous reviendrons vers vous avec
-                  l&apos;ensemble des réponses par écrit.
+                  {t(locale, "widget.thanks.body")}
                 </p>
                 <div className="mt-5 flex gap-3">
                   <a
@@ -94,37 +104,36 @@ export function QuestionWidget() {
                     }
                     className="flex-1 rounded-md bg-marsala py-2.5 text-center text-sm font-medium text-white transition-opacity hover:opacity-90"
                   >
-                    Prendre rendez-vous
+                    {t(locale, "meeting.cta")}
                   </a>
                   <button
                     onClick={close}
                     className="rounded-md border border-neutral-300 px-4 py-2.5 text-sm text-neutral-600 hover:border-neutral-400"
                   >
-                    Fermer
+                    {t(locale, "common.close")}
                   </button>
                 </div>
               </>
             ) : (
               <>
                 <h3 className="text-base font-semibold">
-                  Posez-nous vos questions
+                  {t(locale, "widget.title")}
                 </h3>
                 <p className="mt-2 text-sm leading-6 text-neutral-600">
-                  Une question par champ, avec le contexte utile — l&apos;équipe
-                  les prépare pour le rendez-vous ou y répond par écrit.
+                  {t(locale, "widget.intro")}
                 </p>
 
                 <div className="mt-4 space-y-3">
                   {questions.map((q, i) => (
                     <div key={i}>
                       <label className="mb-1 block text-xs font-medium text-neutral-500">
-                        Question {i + 1}
+                        {t(locale, "widget.questionLabel", { n: i + 1 })}
                       </label>
                       <textarea
                         value={q}
                         onChange={(e) => setQuestion(i, e.target.value)}
                         rows={2}
-                        placeholder="Votre question et son contexte…"
+                        placeholder={t(locale, "widget.placeholder")}
                         className="w-full rounded-md border border-neutral-300 bg-transparent px-3 py-2 text-sm outline-none focus:border-neutral-500"
                       />
                     </div>
@@ -139,13 +148,13 @@ export function QuestionWidget() {
                     <span className="flex h-5 w-5 items-center justify-center rounded-full border border-neutral-400 text-xs leading-none">
                       +
                     </span>
-                    Ajouter une question
+                    {t(locale, "widget.add")}
                   </button>
                 )}
 
                 {status === "error" && (
                   <p className="mt-2 text-sm text-red-600">
-                    Échec de l&apos;envoi, réessayez.
+                    {t(locale, "widget.error")}
                   </p>
                 )}
                 <div className="mt-5 flex gap-3">
@@ -155,14 +164,16 @@ export function QuestionWidget() {
                     className="flex-1 rounded-md bg-marsala py-2.5 text-sm font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-50"
                   >
                     {status === "sending"
-                      ? "Envoi…"
-                      : `Envoyer ${filled.length > 1 ? `mes ${filled.length} questions` : "ma question"}`}
+                      ? t(locale, "widget.sending")
+                      : filled.length > 1
+                        ? t(locale, "widget.send.many", { n: filled.length })
+                        : t(locale, "widget.send.one")}
                   </button>
                   <button
                     onClick={close}
                     className="rounded-md border border-neutral-300 px-4 py-2.5 text-sm text-neutral-600 hover:border-neutral-400"
                   >
-                    Annuler
+                    {t(locale, "common.cancel")}
                   </button>
                 </div>
               </>

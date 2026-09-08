@@ -55,8 +55,13 @@ export default async function InvestorDetailPage({
   const { id } = await params;
 
   const admin = createAdminClient();
-  const [{ data }, { data: statsData }, { data: eventsData }, { data: leaves }] =
-    await Promise.all([
+  const [
+    { data },
+    { data: statsData },
+    { data: eventsData },
+    { data: leaves },
+    { data: clicks },
+  ] = await Promise.all([
       admin.from("investors").select("*").eq("id", id).maybeSingle(),
       admin.from("investor_stats").select("*").eq("investor_id", id).maybeSingle(),
       admin
@@ -72,6 +77,11 @@ export default async function InvestorDetailPage({
         .select("path, duration_ms, created_at")
         .eq("investor_id", id)
         .eq("type", "page_leave"),
+      admin
+        .from("events")
+        .select("label, created_at")
+        .eq("investor_id", id)
+        .eq("type", "docsend_click"),
     ]);
 
   const investor = data as Investor | null;
@@ -91,7 +101,11 @@ export default async function InvestorDetailPage({
     const key = l.path ?? "?";
     byPage.set(key, (byPage.get(key) ?? 0) + (l.duration_ms ?? 0));
   }
-  const dailyBuckets = buildDailyBuckets(leaveRows, 30);
+  const dailyBuckets = buildDailyBuckets(
+    leaveRows,
+    30,
+    (clicks ?? []) as { label: string | null; created_at: string }[]
+  );
   const topPages = [...byPage.entries()].sort((a, b) => b[1] - a[1]);
   const maxPageMs = topPages[0]?.[1] ?? 0;
 

@@ -3,6 +3,8 @@ import path from "path";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getAdminEmail } from "@/lib/admin";
+import { getDemoSession } from "@/lib/demo";
+import { dataRoomBlocked } from "@/lib/dataroom";
 import type { Investor } from "@/lib/types";
 
 // Sert la cap table interactive (HTML autonome) avec les paramètres
@@ -19,20 +21,29 @@ export async function GET(request: Request) {
       return new Response("Réservé aux admins", { status: 403 });
     }
   } else {
-    const supabase = await createClient();
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-    if (!user) return new Response("Non autorisé", { status: 401 });
+    if (await dataRoomBlocked()) {
+      return new Response("Data room fermée", { status: 403 });
+    }
+    const demo = await getDemoSession();
+    if (demo) {
+      // Démo : le niveau 2 est piloté par le cookie signé, pas par la base.
+      if (!demo.level2) return new Response("Niveau 2 requis", { status: 403 });
+    } else {
+      const supabase = await createClient();
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      if (!user) return new Response("Non autorisé", { status: 401 });
 
-    const { data } = await supabase
-      .from("investors")
-      .select("*")
-      .eq("id", user.id)
-      .maybeSingle();
-    const investor = data as Investor | null;
-    if (!investor || investor.status !== "approved" || !investor.level2_access) {
-      return new Response("Niveau 2 requis", { status: 403 });
+      const { data } = await supabase
+        .from("investors")
+        .select("*")
+        .eq("id", user.id)
+        .maybeSingle();
+      const investor = data as Investor | null;
+      if (!investor || investor.status !== "approved" || !investor.level2_access) {
+        return new Response("Niveau 2 requis", { status: 403 });
+      }
     }
   }
 

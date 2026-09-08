@@ -3,25 +3,35 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { track } from "@/lib/tracking";
+import { docFields, t, type Locale } from "@/lib/i18n";
 import type { DocumentRow } from "@/lib/types";
 
 // Regroupe par catégorie (ordre dicté par sort_order) et numérote 01, 02, …
 export function DataRoom({
   docs,
+  locale,
   startIndex = 1,
   columns = 1,
 }: {
   docs: DocumentRow[];
+  locale: Locale;
   startIndex?: number;
   columns?: 1 | 2;
 }) {
   const pathname = usePathname();
 
-  const categories: { name: string; docs: DocumentRow[] }[] = [];
+  // Le regroupement suit la catégorie française (identifiant stable), seul
+  // l'intitulé affiché est traduit.
+  const categories: { name: string; label: string; docs: DocumentRow[] }[] = [];
   for (const doc of docs) {
     const last = categories[categories.length - 1];
     if (last && last.name === doc.category) last.docs.push(doc);
-    else categories.push({ name: doc.category, docs: [doc] });
+    else
+      categories.push({
+        name: doc.category,
+        label: docFields(doc, locale).category,
+        docs: [doc],
+      });
   }
 
   return (
@@ -36,14 +46,15 @@ export function DataRoom({
             <span className="font-mono text-xs text-neutral-400">
               {String(startIndex + i).padStart(2, "0")}
             </span>
-            {cat.name}
+            {cat.label}
           </h3>
           <ul className="mt-2 divide-y divide-neutral-200 rounded-md border border-neutral-200 dark:divide-neutral-800 dark:border-neutral-800">
-            {cat.docs.map((doc) =>
-              doc.docsend_url ? (
+            {cat.docs.map((doc) => {
+              const { title, docsendUrl } = docFields(doc, locale);
+              return docsendUrl ? (
                 <li key={doc.slug}>
                   <a
-                    href={doc.docsend_url}
+                    href={docsendUrl}
                     target="_blank"
                     rel="noopener noreferrer"
                     onClick={() =>
@@ -55,8 +66,10 @@ export function DataRoom({
                     }
                     className="flex items-center justify-between px-4 py-3 text-sm transition-colors hover:bg-neutral-50 dark:hover:bg-neutral-900"
                   >
-                    <span>{doc.title}</span>
-                    <span className="text-xs text-neutral-400">DocSend ↗</span>
+                    <span>{title}</span>
+                    <span className="text-xs text-neutral-400">
+                      {t(locale, "docs.docsend")}
+                    </span>
                   </a>
                 </li>
               ) : (
@@ -65,12 +78,14 @@ export function DataRoom({
                     href={`/investors/docs/${doc.slug}`}
                     className="flex items-center justify-between px-4 py-3 text-sm transition-colors hover:bg-neutral-50 dark:hover:bg-neutral-900"
                   >
-                    <span>{doc.title}</span>
-                    <span className="text-xs text-neutral-400">Lire →</span>
+                    <span>{title}</span>
+                    <span className="text-xs text-neutral-400">
+                      {t(locale, "home.docs.read")}
+                    </span>
                   </Link>
                 </li>
-              )
-            )}
+              );
+            })}
           </ul>
         </section>
       ))}

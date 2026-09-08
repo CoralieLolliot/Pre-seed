@@ -3,9 +3,13 @@
 import { useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { track } from "@/lib/tracking";
+import { t, type Locale } from "@/lib/i18n";
 
 const inputClass =
   "w-full rounded-md border border-neutral-300 bg-transparent px-3 py-2 text-sm outline-none focus:border-neutral-500 dark:border-neutral-700 dark:focus:border-neutral-400";
+
+// Longueur du code envoyé par Supabase Auth (config `mailer_otp_length`).
+const OTP_LENGTH = 8;
 
 type Mode = "new" | "returning";
 type Step = "form" | "code";
@@ -13,9 +17,11 @@ type Step = "form" | "code";
 export function RequestAccessForm({
   refCode,
   nextPath,
+  locale,
 }: {
   refCode: string | null;
   nextPath?: string | null;
+  locale: Locale;
 }) {
   const destination =
     nextPath && nextPath.startsWith("/") ? nextPath : "/investors/home";
@@ -61,11 +67,9 @@ export function RequestAccessForm({
     setBusy(false);
     if (error) {
       if (/signup|not allowed|not found/i.test(error.message)) {
-        setError(
-          "Cet email ne nous est pas connu — passez par « Nouvel investisseur »."
-        );
+        setError(t(locale, "auth.unknownEmail"));
       } else {
-        setError(`L'envoi a échoué : ${error.message}`);
+        setError(`${t(locale, "auth.sendFailed")} ${error.message}`);
       }
     } else {
       setStep("code");
@@ -86,11 +90,14 @@ export function RequestAccessForm({
 
     if (error) {
       setBusy(false);
-      setError("Code invalide ou expiré. Vérifiez, ou redemandez un code.");
+      setError(t(locale, "auth.codeInvalid"));
       return;
     }
 
     track({ type: "login", path: "/investors" });
+    // Le code est validé : c'est le moment d'entrée, la cinématique se joue
+    // sur la page d'arrivée (cf. splash.tsx).
+    window.sessionStorage.setItem("minah_splash_pending", "1");
     window.location.href = destination;
   }
 
@@ -98,21 +105,24 @@ export function RequestAccessForm({
     return (
       <form onSubmit={verifyCode} className="mt-8 space-y-4">
         <div className="rounded-md border border-neutral-200 bg-neutral-50 px-4 py-4 text-sm dark:border-neutral-800 dark:bg-neutral-900">
-          <p className="font-medium">Code envoyé ✓</p>
+          <p className="font-medium">{t(locale, "auth.codeSent")}</p>
           <p className="mt-1 text-neutral-600 dark:text-neutral-400">
-            Saisissez le code à 6 chiffres reçu sur {email.trim()} (le lien
-            dans l&apos;email fonctionne aussi).
+            {t(locale, "auth.codeSentDetail", {
+              n: OTP_LENGTH,
+              email: email.trim(),
+            })}
           </p>
         </div>
         <div>
           <label htmlFor="code" className="mb-1 block text-sm font-medium">
-            Code d&apos;accès
+            {t(locale, "auth.codeLabel")}
           </label>
           <input
             id="code"
             inputMode="numeric"
             autoComplete="one-time-code"
-            placeholder="123456"
+            maxLength={OTP_LENGTH}
+            placeholder={"0".repeat(OTP_LENGTH)}
             required
             value={code}
             onChange={(e) => setCode(e.target.value)}
@@ -124,10 +134,10 @@ export function RequestAccessForm({
         )}
         <button
           type="submit"
-          disabled={busy || code.trim().length < 6}
+          disabled={busy || code.trim().length < OTP_LENGTH}
           className="w-full rounded-md bg-marsala py-2.5 text-sm font-medium text-white transition-opacity hover:opacity-80 disabled:opacity-50"
         >
-          {busy ? "Vérification…" : "Accéder à l'espace investisseurs"}
+          {busy ? t(locale, "auth.codeVerifying") : t(locale, "auth.codeSubmit")}
         </button>
         <button
           type="button"
@@ -138,7 +148,7 @@ export function RequestAccessForm({
           }}
           className="w-full text-center text-xs text-neutral-500 hover:underline"
         >
-          ← Modifier l&apos;email ou redemander un code
+          {t(locale, "auth.codeBack")}
         </button>
       </form>
     );
@@ -150,8 +160,8 @@ export function RequestAccessForm({
       <div className="grid grid-cols-2 gap-1 rounded-md border border-neutral-200 p-1 dark:border-neutral-800">
         {(
           [
-            ["new", "Nouvel investisseur"],
-            ["returning", "Déjà connecté"],
+            ["new", t(locale, "auth.tab.new")],
+            ["returning", t(locale, "auth.tab.returning")],
           ] as [Mode, string][]
         ).map(([m, label]) => (
           <button
@@ -178,7 +188,7 @@ export function RequestAccessForm({
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <label htmlFor="first_name" className="mb-1 block text-sm font-medium">
-                  Prénom
+                  {t(locale, "auth.firstName")}
                 </label>
                 <input
                   id="first_name"
@@ -191,7 +201,7 @@ export function RequestAccessForm({
               </div>
               <div>
                 <label htmlFor="last_name" className="mb-1 block text-sm font-medium">
-                  Nom
+                  {t(locale, "auth.lastName")}
                 </label>
                 <input
                   id="last_name"
@@ -205,7 +215,7 @@ export function RequestAccessForm({
             </div>
             <div>
               <label htmlFor="entity" className="mb-1 block text-sm font-medium">
-                Entité / fonds
+                {t(locale, "auth.entity")}
               </label>
               <input
                 id="entity"
@@ -221,7 +231,7 @@ export function RequestAccessForm({
 
         <div>
           <label htmlFor="email" className="mb-1 block text-sm font-medium">
-            Email
+            {t(locale, "auth.email")}
           </label>
           <input
             id="email"
@@ -243,21 +253,15 @@ export function RequestAccessForm({
           disabled={busy}
           className="w-full rounded-md bg-marsala py-2.5 text-sm font-medium text-white transition-opacity hover:opacity-80 disabled:opacity-50"
         >
-          {busy ? "Envoi…" : "Recevoir mon code d'accès"}
+          {busy ? t(locale, "auth.submitting") : t(locale, "auth.submit")}
         </button>
 
         {mode === "new" && (
           <p className="pt-2 text-xs leading-5 text-neutral-500">
-            En demandant l&apos;accès à l&apos;espace investisseurs, vous
-            acceptez que Minah SAS enregistre vos informations de contact et
-            votre navigation dans cet espace (pages consultées, documents
-            ouverts, durée des visites) à des fins de suivi de la relation
-            investisseur. Vous pouvez demander l&apos;accès ou la suppression de
-            ces données à{" "}
+            {t(locale, "auth.rgpd")}{" "}
             <a href="mailto:contact@minah.io" className="underline">
               contact@minah.io
             </a>
-            .
           </p>
         )}
       </form>

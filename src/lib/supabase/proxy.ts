@@ -35,7 +35,13 @@ export async function updateSession(request: NextRequest) {
   // voir requireAdmin() qui renvoie vers /admin/login.
   const needsAuth = path.startsWith("/investors/") && path !== "/investors";
 
-  if (!user && needsAuth) {
+  // Session de démonstration : on se contente ici de constater la présence du
+  // cookie (pas de crypto dans le proxy). La signature est vérifiée par
+  // getDemoSession() dans chaque page — un cookie forgé passe le proxy mais
+  // n'ouvre rien et retombe sur la redirection côté page.
+  const hasDemoCookie = request.cookies.has("minah_demo");
+
+  if (!user && !hasDemoCookie && needsAuth) {
     const redirectUrl = request.nextUrl.clone();
     redirectUrl.pathname = "/investors";
     // Mémorise la destination pour y revenir après la saisie du code.

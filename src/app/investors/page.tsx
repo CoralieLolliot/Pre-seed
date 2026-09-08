@@ -1,20 +1,33 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { getLocale } from "@/lib/i18n-server";
+import { t } from "@/lib/i18n";
 import { RequestAccessForm } from "./request-access-form";
+import { DemoStartForm } from "./demo-start-form";
+import { getAdminEmail } from "@/lib/admin";
+import { getDemoSession } from "@/lib/demo";
 
-export const metadata = { title: "Espace investisseurs — Minah" };
+export async function generateMetadata() {
+  return { title: t(await getLocale(), "meta.title") };
+}
 
 export default async function InvestorsPage({
   searchParams,
 }: PageProps<"/investors">) {
+  const locale = await getLocale();
   const params = await searchParams;
   const ref = typeof params.ref === "string" ? params.ref : null;
   const error = typeof params.error === "string" ? params.error : null;
   const rawNext = typeof params.next === "string" ? params.next : null;
   const next = rawNext?.startsWith("/") ? rawNext : null;
 
-  if (process.env.NEXT_PUBLIC_SUPABASE_URL) {
+  // Démo déjà ouverte : on entre directement, comme un investisseur connecté.
+  if (await getDemoSession()) redirect("/investors/home");
+  // ?demo=1 depuis l'espace admin : formulaire sans code, réservé aux admins.
+  const demo = params.demo === "1" && (await getAdminEmail()) !== null;
+
+  if (!demo && process.env.NEXT_PUBLIC_SUPABASE_URL) {
     const supabase = await createClient();
     const {
       data: { user },
@@ -33,20 +46,21 @@ export default async function InvestorsPage({
   return (
     <main className="mx-auto flex w-full max-w-md flex-1 flex-col justify-center px-6 py-16">
       <h1 className="text-2xl font-semibold tracking-tight">
-        Espace investisseurs
+        {t(locale, "auth.title")}
       </h1>
-      <p className="mt-2 text-sm text-neutral-600 dark:text-neutral-400">
-        Accès sur invitation. Première visite : renseignez vos coordonnées.
-        Déjà connecté : votre email suffit. Vous recevez un code d&apos;accès à
-        usage unique par email.
+      <p className="mt-2 text-sm text-neutral-600">
+        {t(locale, "auth.subtitle")}
       </p>
       {error === "lien-invalide" && (
-        <p className="mt-4 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700 dark:border-red-900 dark:bg-red-950 dark:text-red-300">
-          Ce lien d&apos;accès est invalide ou expiré. Redemandez un lien
-          ci-dessous.
+        <p className="mt-4 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+          {t(locale, "auth.error.invalidLink")}
         </p>
       )}
-      <RequestAccessForm refCode={ref} nextPath={next} />
+      {demo ? (
+        <DemoStartForm />
+      ) : (
+        <RequestAccessForm refCode={ref} nextPath={next} locale={locale} />
+      )}
     </main>
   );
 }
