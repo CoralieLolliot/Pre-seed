@@ -22,6 +22,12 @@ export default async function AdminLayout({ children }: LayoutProps<"/admin">) {
           >
             Cap table
           </Link>
+          <Link
+            href="/admin/acces"
+            className="text-xs text-neutral-500 hover:underline"
+          >
+            Accès admin
+          </Link>
         </div>
         <div className="flex items-center gap-4">
           <DataRoomSwitch status={dataRoomStatus} />

@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { ADMIN_COOKIE, isAdminEmail, signAdminToken } from "@/lib/admin";
 
-// Connexion admin : email whitelisté (ADMIN_EMAILS) + mot de passe partagé
+// Connexion admin : email whitelisté (env + /admin/acces) + mot de passe partagé
 // (ADMIN_PASSWORD, "000" par défaut pour ce premier jet).
 export async function POST(request: Request) {
   let body: Record<string, unknown>;
@@ -15,7 +15,7 @@ export async function POST(request: Request) {
   const password = typeof body.password === "string" ? body.password : "";
   const expected = process.env.ADMIN_PASSWORD ?? "000";
 
-  if (!isAdminEmail(email) || password !== expected) {
+  if (!(await isAdminEmail(email)) || password !== expected) {
     return new Response(null, { status: 401 });
   }
 

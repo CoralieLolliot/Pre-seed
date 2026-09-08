@@ -15,7 +15,14 @@ export const DATAROOM_STATUSES: DataRoomStatus[] = [
   "closed",
 ];
 
-const SETTING_KEY = "dataroom_status";
+// Le développement local et la production partagent la même base Supabase.
+// Sans cette séparation, basculer la data room en local pour vérifier un écran
+// la fermerait aussi pour les vrais investisseurs — c'est arrivé deux fois.
+// `next dev` tourne en NODE_ENV=development, Vercel en production.
+const SETTING_KEY =
+  process.env.NODE_ENV === "production"
+    ? "dataroom_status"
+    : "dataroom_status_dev";
 
 function parse(value: unknown): DataRoomStatus {
   const s = (value as { status?: unknown } | null)?.status;
